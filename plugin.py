@@ -20,6 +20,7 @@ import supybot.ircmsgs as ircmsgs
 import os
 #import pprint
 #from string import Template
+import GeoIP
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.exc import NoResultFound
@@ -116,6 +117,8 @@ class Wunder(callbacks.Plugin):
                                           autocommit=True)
             self.db = self.__session()
 
+        self.gi = GeoIP.open("/usr/share/GeoIP/GeoIPCity.dat", GeoIP.GEOIP_STANDARD)
+
     def die(self):
         self.db.close_all()
 
@@ -128,6 +131,13 @@ class Wunder(callbacks.Plugin):
             user = self.db.add(User(username))
             #self.db.commit()
             return query.filter(User.name == username).one()
+
+    def geolookup(self, host):
+        location = self.gi.record_by_name(host)
+        try:
+            return '{city}, {region}, {country_code}'.format(**location)
+        except:
+            return None
 
     def temp(self, irc, msg, args, query):
         """<unit>
@@ -199,8 +209,10 @@ class Wunder(callbacks.Plugin):
                 self.log.info('Wunder.py: Saved location found: %s' % locquery)
             else:
                 self.log.info('Wunder.py: Saved location not found')
-                irc.reply('No saved location found, please specify a location.')
-                return
+                locquery = self.geolookup(msg.host)
+                if not locquery:
+                    irc.reply('Location could not be determined, please specify a location.')
+                    return
 
         user = self.get_user(msg.prefix)
         self.log.info('Wunder.py: Looking up weather for %s' % locquery)
